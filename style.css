@@ -2013,6 +2013,7 @@ body.worldline-beta {
 
   .edu-time {
     font-size: 12px !important;
+    white-space: normal;
   }
 
   .exp-meta {
@@ -2058,7 +2059,8 @@ body.worldline-beta {
     width: 22px !important;
     height: 22px !important;
     flex-shrink: 0;
-    fill: var(--accent);
+    fill: none;
+    stroke: var(--accent);
   }
 
   .contact-row span {
@@ -2184,7 +2186,8 @@ body.worldline-beta {
   }
 
   .portfolio-content {
-    padding: 20px 18px 18px !important;
+    padding: 28px 18px 18px !important;
+    margin-top: 12px;
     background: radial-gradient(circle at top, rgba(118,199,163,0.12) 0, transparent 55%),
                 #050a0a;
   }
@@ -2329,6 +2332,12 @@ body.worldline-beta {
   .real-item p,
   .hobby-item p {
     font-size: 13px !important;
+  }
+
+  .edu-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
 
   .terminal-fab {

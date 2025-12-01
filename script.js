@@ -453,7 +453,6 @@
   function openPortfolio() {
     state.open = true;
     backdrop.classList.add('open');
-    backdrop.setAttribute('aria-hidden', 'false');
     toggleBtn.setAttribute('aria-expanded', 'true');
     ensureExplorer();
     ensureSelection();
@@ -464,7 +463,6 @@
   function closePortfolio() {
     state.open = false;
     backdrop.classList.remove('open');
-    backdrop.setAttribute('aria-hidden', 'true');
     toggleBtn.setAttribute('aria-expanded', 'false');
     document.body.style.overflow = '';
   }

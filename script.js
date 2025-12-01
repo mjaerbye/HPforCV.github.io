@@ -96,6 +96,11 @@
   const experienceContent = document.getElementById('experienceContent');
   
   if (experienceToggle && experienceContent) {
+    if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
+      experienceToggle.classList.add('collapsed');
+      experienceContent.classList.add('collapsed');
+    }
+
     experienceToggle.addEventListener('click', function() {
       experienceToggle.classList.toggle('collapsed');
       experienceContent.classList.toggle('collapsed');
@@ -385,6 +390,444 @@
       printLine('command not found: ' + cmd);
     }
     consoleCmd.value = '';
+  });
+})();
+
+
+(function () {
+  if (typeof window === 'undefined') return;
+  const data = window.PORTFOLIO_TREE;
+  const toggleBtn = document.getElementById('portfolioToggle');
+  const backdrop = document.getElementById('portfolioBackdrop');
+  const explorerRoot = document.getElementById('portfolioExplorer');
+  const contentRoot = document.getElementById('portfolioContent');
+  const closeBtn = document.getElementById('portfolioClose');
+  if (!data || !toggleBtn || !backdrop || !explorerRoot || !contentRoot) return;
+
+  const years = Object.keys(data).sort(function (a, b) {
+    return Number(b) - Number(a);
+  });
+  if (!years.length) return;
+
+  function tryImageFormats(imgElement, imagePath, hideParentOnError) {
+    const extensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    const basePathClean = imagePath.replace(/\.(jpe?g|png|webp)$/i, '');
+    let currentIndex = 0;
+    const existingOnload = imgElement.onload;
+
+    imgElement.onerror = function() {
+      currentIndex++;
+      if (currentIndex < extensions.length) {
+        imgElement.src = basePathClean + extensions[currentIndex];
+      } else {
+        if (hideParentOnError && imgElement.closest('.portfolio-file')) {
+          imgElement.closest('.portfolio-file').style.display = 'none';
+        } else {
+          imgElement.style.display = 'none';
+        }
+      }
+    };
+
+    if (existingOnload) {
+      const preservedOnload = existingOnload;
+      imgElement.onload = function() {
+        preservedOnload.call(this);
+      };
+    }
+
+    imgElement.src = imagePath;
+  }
+
+  const state = {
+    open: false,
+    year: years[0],
+    folderId: null,
+    fileIndex: 0,
+  };
+
+  let treePane = null;
+  let fileGrid = null;
+  let previewPane = null;
+  let breadcrumbEl = null;
+
+  function openPortfolio() {
+    state.open = true;
+    backdrop.classList.add('open');
+    backdrop.setAttribute('aria-hidden', 'false');
+    toggleBtn.setAttribute('aria-expanded', 'true');
+    ensureExplorer();
+    ensureSelection();
+    renderExplorer();
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePortfolio() {
+    state.open = false;
+    backdrop.classList.remove('open');
+    backdrop.setAttribute('aria-hidden', 'true');
+    toggleBtn.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+  }
+
+  toggleBtn.addEventListener('click', function () {
+    if (state.open) {
+      closePortfolio();
+    } else {
+      openPortfolio();
+    }
+  });
+
+  closeBtn?.addEventListener('click', closePortfolio);
+  
+  backdrop.addEventListener('click', function (e) {
+    if (e.target === backdrop) {
+      closePortfolio();
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && state.open) {
+      closePortfolio();
+    }
+  });
+
+  function ensureExplorer() {
+    if (contentRoot.dataset.mount === 'true') return;
+    contentRoot.dataset.mount = 'true';
+
+    const shell = document.createElement('div');
+    shell.className = 'portfolio-shell';
+
+    treePane = document.createElement('nav');
+    treePane.className = 'portfolio-tree';
+    treePane.setAttribute('role', 'tree');
+
+    const content = document.createElement('div');
+    content.className = 'portfolio-content';
+
+    breadcrumbEl = document.createElement('div');
+    breadcrumbEl.className = 'portfolio-breadcrumb';
+
+
+    fileGrid = document.createElement('div');
+    fileGrid.className = 'portfolio-files';
+    fileGrid.setAttribute('role', 'list');
+
+    previewPane = document.createElement('div');
+    previewPane.className = 'portfolio-preview';
+    previewPane.setAttribute('aria-live', 'polite');
+
+    content.appendChild(breadcrumbEl);
+    content.appendChild(fileGrid);
+    content.appendChild(previewPane);
+
+    shell.appendChild(treePane);
+    shell.appendChild(content);
+    contentRoot.appendChild(shell);
+
+    treePane.addEventListener('click', handleTreeClick);
+    fileGrid.addEventListener('click', handleFileClick);
+  }
+
+  function ensureSelection() {
+    const folders = data[state.year] || [];
+    if (!folders.length) {
+      state.folderId = null;
+      state.fileIndex = null;
+      return;
+    }
+
+    if (!state.folderId || !folders.some(function (folder) { return getFolderId(folder) === state.folderId; })) {
+      state.folderId = getFolderId(folders[0]);
+      state.fileIndex = 0;
+    }
+
+    const folder = getFolder(state.year, state.folderId);
+    if (!folder || !Array.isArray(folder.items) || !folder.items.length) {
+      state.fileIndex = null;
+      return;
+    }
+
+    if (state.fileIndex == null || state.fileIndex >= folder.items.length) {
+      state.fileIndex = 0;
+    }
+  }
+
+  function renderExplorer() {
+    renderTree();
+    renderContent();
+  }
+
+  function renderTree() {
+    if (!treePane) return;
+    treePane.innerHTML = '';
+
+    years.forEach(function (year) {
+      const yearBtn = document.createElement('button');
+      yearBtn.type = 'button';
+      yearBtn.className = 'portfolio-year' + (state.year === year ? ' active' : '');
+      yearBtn.dataset.role = 'year';
+      yearBtn.dataset.year = year;
+      yearBtn.setAttribute('aria-expanded', state.year === year ? 'true' : 'false');
+      yearBtn.textContent = year;
+      treePane.appendChild(yearBtn);
+
+      const folders = data[year] || [];
+      const list = document.createElement('div');
+      list.className = 'portfolio-folder-list';
+      list.hidden = state.year !== year;
+
+      folders.forEach(function (folder) {
+        const id = getFolderId(folder);
+        const folderBtn = document.createElement('button');
+        folderBtn.type = 'button';
+        folderBtn.className = 'portfolio-folder' + (state.folderId === id ? ' active' : '');
+        folderBtn.dataset.role = 'folder';
+        folderBtn.dataset.year = year;
+        folderBtn.dataset.folder = id;
+
+        const icon = document.createElement('span');
+        icon.className = 'folder-icon';
+        icon.setAttribute('aria-hidden', 'true');
+
+        const name = document.createElement('span');
+        name.className = 'folder-name';
+        name.textContent = folder.name;
+
+        folderBtn.appendChild(icon);
+        folderBtn.appendChild(name);
+        list.appendChild(folderBtn);
+      });
+
+      treePane.appendChild(list);
+    });
+
+    const credit = document.createElement('div');
+    credit.className = 'portfolio-credit';
+    credit.textContent = 'Alle Designs wurden von mir selbst erstellt';
+    treePane.appendChild(credit);
+  }
+
+  function renderContent() {
+    const folder = getFolder(state.year, state.folderId);
+    renderBreadcrumb(folder);
+    renderFiles(folder);
+    renderPreview(folder);
+  }
+
+  function renderBreadcrumb(folder) {
+    if (!breadcrumbEl) return;
+    breadcrumbEl.innerHTML = '';
+    const yearCrumb = document.createElement('span');
+    yearCrumb.className = 'crumb';
+    yearCrumb.textContent = state.year;
+
+    const divider = document.createElement('span');
+    divider.className = 'crumb-divider';
+    divider.textContent = '/';
+
+    const folderCrumb = document.createElement('span');
+    folderCrumb.className = 'crumb current';
+    folderCrumb.textContent = folder ? folder.name : 'Folder wählen';
+
+    breadcrumbEl.appendChild(yearCrumb);
+    breadcrumbEl.appendChild(divider);
+    breadcrumbEl.appendChild(folderCrumb);
+  }
+
+
+  function renderFiles(folder) {
+    if (!fileGrid) return;
+    fileGrid.innerHTML = '';
+    if (!folder || !Array.isArray(folder.items) || !folder.items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'portfolio-empty';
+      empty.innerHTML = '<p>Здесь появятся работы. Добавь новые объекты в <code>portfolio-data.js</code>.</p>';
+      fileGrid.appendChild(empty);
+      return;
+    }
+
+    folder.items.forEach(function (item, index) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'portfolio-file' + (state.fileIndex === index ? ' selected' : '');
+      card.dataset.index = String(index);
+      card.setAttribute('role', 'listitem');
+      card.style.opacity = '0';
+
+      const thumb = document.createElement('div');
+      thumb.className = 'portfolio-thumb';
+      if (item.aspect) {
+        thumb.dataset.aspect = item.aspect;
+      }
+      if (item.image) {
+        const img = document.createElement('img');
+        img.alt = item.title || 'Portfolio asset';
+        img.loading = 'eager';
+        img.decoding = 'sync';
+        img.onload = function() {
+          card.style.opacity = '1';
+          card.style.transition = 'opacity 0.15s ease';
+        };
+        tryImageFormats(img, item.image, true);
+        thumb.appendChild(img);
+      } else {
+        thumb.classList.add('fallback');
+        thumb.innerHTML = '<span>Bild fehlt</span>';
+      }
+
+      const title = document.createElement('span');
+      title.className = 'portfolio-file-title';
+      title.textContent = item.title || 'Unbenannt';
+
+      card.appendChild(thumb);
+      card.appendChild(title);
+      fileGrid.appendChild(card);
+    });
+  }
+
+  function renderPreview(folder) {
+    if (!previewPane) return;
+    previewPane.innerHTML = '';
+
+    if (!folder || !Array.isArray(folder.items) || folder.items.length === 0 || state.fileIndex == null) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'portfolio-preview-empty';
+      placeholder.innerHTML = '<p>Выбери файл, чтобы увидеть фулл превью и описание.</p>';
+      previewPane.appendChild(placeholder);
+      return;
+    }
+
+    const item = folder.items[state.fileIndex];
+    const figure = document.createElement('figure');
+    figure.className = 'preview-frame';
+    if (item.aspect) {
+      figure.dataset.aspect = item.aspect;
+    }
+
+    if (item.image) {
+      const img = document.createElement('img');
+      img.alt = item.title || 'Portfolio asset preview';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      tryImageFormats(img, item.image);
+      figure.appendChild(img);
+    } else {
+      const fallback = document.createElement('div');
+      fallback.className = 'preview-fallback';
+      fallback.textContent = 'Нет изображения';
+      figure.appendChild(fallback);
+    }
+
+    const caption = document.createElement('figcaption');
+    caption.innerHTML =
+      '<strong>' + (item.title || 'Unbenannt') + '</strong>' +
+      (item.description ? '<p>' + item.description + '</p>' : '');
+
+    previewPane.appendChild(figure);
+    previewPane.appendChild(caption);
+  }
+
+  function handleTreeClick(event) {
+    const yearBtn = event.target.closest('button[data-role="year"]');
+    if (yearBtn) {
+      const year = yearBtn.dataset.year;
+      if (year && year !== state.year) {
+        state.year = year;
+        state.folderId = null;
+        state.fileIndex = 0;
+        ensureSelection();
+        renderExplorer();
+      }
+      return;
+    }
+
+    const folderBtn = event.target.closest('button[data-role="folder"]');
+    if (folderBtn) {
+      const folderId = folderBtn.dataset.folder;
+      const year = folderBtn.dataset.year;
+      if (folderId && year) {
+        state.year = year;
+        state.folderId = folderId;
+        state.fileIndex = 0;
+        ensureSelection();
+        renderExplorer();
+      }
+    }
+  }
+
+  function handleFileClick(event) {
+    const fileBtn = event.target.closest('button[data-index]');
+    if (!fileBtn) return;
+    const index = Number(fileBtn.dataset.index);
+    if (Number.isNaN(index) || index === state.fileIndex) return;
+    state.fileIndex = index;
+    renderFiles(getFolder(state.year, state.folderId));
+    renderPreview(getFolder(state.year, state.folderId));
+  }
+
+  function getFolder(year, folderId) {
+    const folders = data[year] || [];
+    if (!folderId) return folders[0];
+    return folders.find(function (folder) {
+      return getFolderId(folder) === folderId;
+    }) || folders[0];
+  }
+
+  function getFolderId(folder) {
+    if (!folder) return '';
+    if (folder.slug) return folder.slug;
+    return slugify(folder.name || '');
+  }
+
+  function slugify(text) {
+    return String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'folder';
+  }
+
+  const lightbox = document.getElementById('lightbox');
+  const lightboxImage = document.getElementById('lightboxImage');
+  const lightboxClose = document.getElementById('lightboxClose');
+  const lightboxBackdrop = document.querySelector('.lightbox-backdrop');
+
+  function openLightbox(imgSrc) {
+    if (!lightbox || !lightboxImage) return;
+    tryImageFormats(lightboxImage, imgSrc);
+    lightbox.classList.add('open');
+    lightbox.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    if (!lightbox) return;
+    lightbox.classList.remove('open');
+    lightbox.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
+  if (lightboxClose) {
+    lightboxClose.addEventListener('click', closeLightbox);
+  }
+
+  if (lightboxBackdrop) {
+    lightboxBackdrop.addEventListener('click', closeLightbox);
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && lightbox && lightbox.classList.contains('open')) {
+      closeLightbox();
+    }
+  });
+
+  document.addEventListener('click', function(e) {
+    const thumb = e.target.closest('.portfolio-thumb img');
+    if (thumb) {
+      e.preventDefault();
+      e.stopPropagation();
+      openLightbox(thumb.src);
+    }
   });
 })();
 
